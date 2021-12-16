@@ -47,3 +47,7 @@ impl ProtocolPacket for HandshakePacket {
         }
     }
 }
+
+pub trait HandshakeListenerTrait {
+    fn handle(&self, packet: HandshakePacket);
+}

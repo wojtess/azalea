@@ -64,3 +64,7 @@ impl ProtocolPacket for StatusPacket {
         }
     }
 }
+
+pub trait StatusListenerTrait {
+    fn handle(&self, packet: StatusPacket);
+}

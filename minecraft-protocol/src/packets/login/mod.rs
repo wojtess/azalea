@@ -54,3 +54,7 @@ impl ProtocolPacket for LoginPacket {
         }
     }
 }
+
+pub trait LoginListenerTrait {
+    fn handle(&self, packet: LoginPacket);
+}

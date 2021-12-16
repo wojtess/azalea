@@ -33,3 +33,7 @@ impl ProtocolPacket for GamePacket {
         }
     }
 }
+
+pub trait GameListenerTrait {
+    fn handle(&self, packet: GamePacket);
+}

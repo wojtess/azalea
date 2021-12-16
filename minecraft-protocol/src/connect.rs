@@ -1,6 +1,6 @@
 //! parse sending and receiving packets with a server.
 
-use crate::packets::game::GamePacket;
+use crate::packets::game::{GameListenerTrait, GamePacket};
 use crate::packets::handshake::HandshakePacket;
 use crate::packets::login::LoginPacket;
 use crate::packets::status::StatusPacket;
@@ -24,6 +24,8 @@ pub struct GameConnection {
     pub flow: PacketFlow,
     /// The buffered writer
     pub stream: TcpStream,
+
+    pub listener: Box<dyn GameListenerTrait>,
 }
 
 pub struct StatusConnection {
@@ -90,6 +92,10 @@ impl GameConnection {
     /// Write a packet to the server
     pub async fn write(&mut self, packet: GamePacket) {
         write_packet(packet, &mut self.stream).await;
+    }
+
+    pub fn set_listener<T: GameListenerTrait>(&mut self, listener: T) {
+        self.listener = Box::new(listener);
     }
 }
 

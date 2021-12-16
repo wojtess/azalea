@@ -1,4 +1,4 @@
-//! This lib is responsible for parsing Minecraft packets.
+//! This lib is for sending and receiving Minecraft packets, modelled after the Minecraft source code.
 
 use std::net::IpAddr;
 use std::str::FromStr;
