@@ -12,7 +12,8 @@ use azalea_protocol::{
             serverbound_custom_payload_packet::ServerboundCustomPayloadPacket,
             serverbound_keep_alive_packet::ServerboundKeepAlivePacket,
             serverbound_move_player_pos_rot_packet::ServerboundMovePlayerPosRotPacket,
-            ClientboundGamePacket, ServerboundGamePacket,
+            serverbound_pong_packet::ServerboundPongPacket, ClientboundGamePacket,
+            ServerboundGamePacket,
         },
         handshake::client_intention_packet::ClientIntentionPacket,
         login::{
@@ -687,7 +688,11 @@ impl Client {
             ClientboundGamePacket::OpenBook(_) => {}
             ClientboundGamePacket::OpenScreen(_) => {}
             ClientboundGamePacket::OpenSignEditor(_) => {}
-            ClientboundGamePacket::Ping(_) => {}
+            ClientboundGamePacket::Ping(p) => {
+                client
+                    .write_packet(ServerboundPongPacket { id: p.id }.get())
+                    .await?
+            }
             ClientboundGamePacket::PlaceGhostRecipe(_) => {}
             ClientboundGamePacket::PlayerChatHeader(_) => {}
             ClientboundGamePacket::PlayerCombatEnd(_) => {}
