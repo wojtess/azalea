@@ -9,11 +9,11 @@ use azalea_protocol::{
             clientbound_player_chat_packet::ClientboundPlayerChatPacket,
             clientbound_system_chat_packet::ClientboundSystemChatPacket,
             serverbound_accept_teleportation_packet::ServerboundAcceptTeleportationPacket,
+            serverbound_client_information_packet::ServerboundClientInformationPacket,
             serverbound_custom_payload_packet::ServerboundCustomPayloadPacket,
             serverbound_keep_alive_packet::ServerboundKeepAlivePacket,
             serverbound_move_player_pos_rot_packet::ServerboundMovePlayerPosRotPacket,
-            serverbound_pong_packet::ServerboundPongPacket, ClientboundGamePacket,
-            ServerboundGamePacket,
+            ClientboundGamePacket, ServerboundGamePacket,
         },
         handshake::client_intention_packet::ClientIntentionPacket,
         login::{
@@ -31,7 +31,7 @@ use azalea_world::{
     Dimension,
 };
 use log::{debug, error, warn};
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock};
 use std::{
     fmt::Debug,
     io::{self, Cursor},
@@ -44,10 +44,17 @@ use tokio::{
     time::{self},
 };
 
+pub type ClientInformation = ServerboundClientInformationPacket;
+
 /// Events are sent before they're processed, so for example game ticks happen
 /// at the beginning of a tick before anything has happened.
 #[derive(Debug, Clone)]
 pub enum Event {
+    /// Happens right after the bot switches into the Game state, but before
+    /// it's actually spawned. This can be useful for setting the client
+    /// information with `Client::set_client_information`, so the packet
+    /// doesn't have to be sent twice.
+    Initialize,
     Login,
     Chat(ChatPacket),
     /// Happens 20 times per second, but only when the world is loaded.
@@ -70,7 +77,7 @@ impl ChatPacket {
     }
 }
 
-/// A player that you can control that is currently in a Minecraft server.
+/// A player that you control that is currently in a Minecraft server.
 #[derive(Clone)]
 pub struct Client {
     game_profile: GameProfile,
@@ -79,6 +86,7 @@ pub struct Client {
     pub player: Arc<Mutex<Player>>,
     pub dimension: Arc<Mutex<Dimension>>,
     pub physics_state: Arc<Mutex<PhysicsState>>,
+    pub client_information: Arc<RwLock<ClientInformation>>,
     tasks: Arc<Mutex<Vec<JoinHandle<()>>>>,
 }
 
@@ -107,6 +115,8 @@ pub enum JoinError {
     Io(#[from] io::Error),
     #[error("{0}")]
     SessionServer(#[from] azalea_auth::sessionserver::SessionServerError),
+    #[error("The given address could not be parsed into a ServerAddress")]
+    InvalidAddress,
 }
 
 #[derive(Error, Debug)]
@@ -120,12 +130,30 @@ pub enum HandleError {
 }
 
 impl Client {
-    /// Connect to a Minecraft server with an account.
+    /// Connect to a Minecraft server.
+    ///
+    /// To change the render distance and other settings, use [`Client::set_client_information`].
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use azalea_client::Client;
+    ///
+    /// #[tokio::main]
+    /// async fn main() -> Box<dyn std::error::Error> {
+    ///     let account = Account::offline("bot");
+    ///     let client = Client::join(&account, "localhost").await?;
+    ///     client.chat("Hello, world!").await?;
+    ///     client.shutdown().await?;
+    /// }
+    /// ```
     pub async fn join(
         account: &Account,
-        address: &ServerAddress,
+        address: impl TryInto<ServerAddress>,
     ) -> Result<(Self, UnboundedReceiver<Event>), JoinError> {
-        let resolved_address = resolver::resolve_address(address).await?;
+        let address: ServerAddress = address.try_into().map_err(|_| JoinError::InvalidAddress)?;
+
+        let resolved_address = resolver::resolve_address(&address).await?;
 
         let mut conn = Connection::new(&resolved_address).await?;
 
@@ -202,7 +230,7 @@ impl Client {
                     }
                 },
                 Err(e) => {
-                    panic!("Error: {:?}", e);
+                    panic!("Error: {e:?}");
                 }
             }
         };
@@ -223,7 +251,10 @@ impl Client {
             dimension: Arc::new(Mutex::new(Dimension::default())),
             physics_state: Arc::new(Mutex::new(PhysicsState::default())),
             tasks: Arc::new(Mutex::new(Vec::new())),
+            client_information: Arc::new(RwLock::new(ClientInformation::default())),
         };
+
+        tx.send(Event::Initialize).unwrap();
 
         // just start up the game loop and we're ready!
 
@@ -269,7 +300,7 @@ impl Client {
                         if IGNORE_ERRORS {
                             continue;
                         } else {
-                            panic!("Error handling packet: {}", e);
+                            panic!("Error handling packet: {e}");
                         }
                     }
                 },
@@ -277,7 +308,7 @@ impl Client {
                     if IGNORE_ERRORS {
                         warn!("{}", e);
                         match e {
-                            ReadPacketError::FrameSplitter { .. } => panic!("Error: {:?}", e),
+                            ReadPacketError::FrameSplitter { .. } => panic!("Error: {e:?}"),
                             _ => continue,
                         }
                     } else {
@@ -372,6 +403,12 @@ impl Client {
                     player_lock.set_entity_id(p.player_id);
                 }
 
+                // send the client information that we have set
+                let client_information_packet: ClientInformation =
+                    client.client_information.read().clone();
+                client.write_packet(client_information_packet.get()).await?;
+
+                // brand
                 client
                     .write_packet(
                         ServerboundCustomPayloadPacket {
@@ -385,8 +422,8 @@ impl Client {
 
                 tx.send(Event::Login).unwrap();
             }
-            ClientboundGamePacket::UpdateViewDistance(p) => {
-                debug!("Got view distance packet {:?}", p);
+            ClientboundGamePacket::SetChunkCacheRadius(p) => {
+                debug!("Got set chunk cache radius packet {:?}", p);
             }
             ClientboundGamePacket::CustomPayload(p) => {
                 debug!("Got custom payload packet {:?}", p);
@@ -544,14 +581,8 @@ impl Client {
             ClientboundGamePacket::UpdateAttributes(_p) => {
                 // debug!("Got update attributes packet {:?}", p);
             }
-            ClientboundGamePacket::EntityVelocity(p) => {
-                let mut dim = client.dimension.lock();
-
-                let mut entity = dim.entity_data_mut_by_id(p.entity_id).unwrap();
-
-                entity.xxa = p.x_vel as f32 / 8000f32;
-                entity.zza = p.z_vel as f32 / 8000f32;
-                entity.yya = p.y_vel as f32 / 8000f32;
+            ClientboundGamePacket::SetEntityMotion(_p) => {
+                // debug!("Got entity velocity packet {:?}", p);
             }
             ClientboundGamePacket::SetEntityLink(p) => {
                 debug!("Got set entity link packet {:?}", p);
@@ -694,11 +725,7 @@ impl Client {
             ClientboundGamePacket::OpenBook(_) => {}
             ClientboundGamePacket::OpenScreen(_) => {}
             ClientboundGamePacket::OpenSignEditor(_) => {}
-            ClientboundGamePacket::Ping(p) => {
-                client
-                    .write_packet(ServerboundPongPacket { id: p.id }.get())
-                    .await?
-            }
+            ClientboundGamePacket::Ping(_) => {}
             ClientboundGamePacket::PlaceGhostRecipe(_) => {}
             ClientboundGamePacket::PlayerChatHeader(_) => {}
             ClientboundGamePacket::PlayerCombatEnd(_) => {}
@@ -716,10 +743,8 @@ impl Client {
             ClientboundGamePacket::SetBorderWarningDelay(_) => {}
             ClientboundGamePacket::SetBorderWarningDistance(_) => {}
             ClientboundGamePacket::SetCamera(_) => {}
-            ClientboundGamePacket::SetChunkCacheRadius(_) => {}
             ClientboundGamePacket::SetDisplayChatPreview(_) => {}
             ClientboundGamePacket::SetDisplayObjective(_) => {}
-            ClientboundGamePacket::SetEntityMotion(_) => {}
             ClientboundGamePacket::SetObjective(_) => {}
             ClientboundGamePacket::SetPassengers(_) => {}
             ClientboundGamePacket::SetPlayerTeam(_) => {}
@@ -798,6 +823,35 @@ impl Client {
         dimension
             .entity(entity_id)
             .expect("Player entity should be in the given dimension")
+    }
+
+    /// Returns whether we have a received the login packet yet.
+    pub fn logged_in(&self) -> bool {
+        let dimension = self.dimension.lock();
+        let player = self.player.lock();
+        player.entity(&dimension).is_some()
+    }
+
+    /// Tell the server we changed our game options (i.e. render distance, main hand).
+    /// If this is not set before the login packet, the default will be sent.
+    pub async fn set_client_information(
+        &self,
+        client_information: ServerboundClientInformationPacket,
+    ) -> Result<(), std::io::Error> {
+        {
+            let mut client_information_lock = self.client_information.write();
+            *client_information_lock = client_information;
+        }
+
+        if self.logged_in() {
+            let client_information_packet = {
+                let client_information = self.client_information.read();
+                client_information.clone().get()
+            };
+            self.write_packet(client_information_packet).await?;
+        }
+
+        Ok(())
     }
 }
 

@@ -23,7 +23,6 @@ pub mod clientbound_custom_sound_packet;
 pub mod clientbound_delete_chat_packet;
 pub mod clientbound_disconnect_packet;
 pub mod clientbound_entity_event_packet;
-pub mod clientbound_entity_velocity_packet;
 pub mod clientbound_explode_packet;
 pub mod clientbound_forget_level_chunk_packet;
 pub mod clientbound_game_event_packet;
@@ -105,7 +104,6 @@ pub mod clientbound_update_attributes_packet;
 pub mod clientbound_update_mob_effect_packet;
 pub mod clientbound_update_recipes_packet;
 pub mod clientbound_update_tags_packet;
-pub mod clientbound_update_view_distance_packet;
 pub mod serverbound_accept_teleportation_packet;
 pub mod serverbound_block_entity_tag_query;
 pub mod serverbound_change_difficulty_packet;
@@ -290,14 +288,12 @@ declare_state_packets!(
         0x49: clientbound_set_camera_packet::ClientboundSetCameraPacket,
         0x4a: clientbound_set_carried_item_packet::ClientboundSetCarriedItemPacket,
         0x4b: clientbound_set_chunk_cache_center_packet::ClientboundSetChunkCacheCenterPacket,
-        0x4c: clientbound_update_view_distance_packet::ClientboundUpdateViewDistancePacket,
         0x4c: clientbound_set_chunk_cache_radius_packet::ClientboundSetChunkCacheRadiusPacket,
         0x4d: clientbound_set_default_spawn_position_packet::ClientboundSetDefaultSpawnPositionPacket,
         0x4e: clientbound_set_display_chat_preview_packet::ClientboundSetDisplayChatPreviewPacket,
         0x4f: clientbound_set_display_objective_packet::ClientboundSetDisplayObjectivePacket,
         0x50: clientbound_set_entity_data_packet::ClientboundSetEntityDataPacket,
         0x51: clientbound_set_entity_link_packet::ClientboundSetEntityLinkPacket,
-        0x52: clientbound_entity_velocity_packet::ClientboundEntityVelocityPacket,
         0x52: clientbound_set_entity_motion_packet::ClientboundSetEntityMotionPacket,
         0x53: clientbound_set_equipment_packet::ClientboundSetEquipmentPacket,
         0x54: clientbound_set_experience_packet::ClientboundSetExperiencePacket,
