@@ -544,8 +544,14 @@ impl Client {
             ClientboundGamePacket::UpdateAttributes(_p) => {
                 // debug!("Got update attributes packet {:?}", p);
             }
-            ClientboundGamePacket::EntityVelocity(_p) => {
-                // debug!("Got entity velocity packet {:?}", p);
+            ClientboundGamePacket::EntityVelocity(p) => {
+                let mut dim = client.dimension.lock();
+
+                let mut entity = dim.entity_data_mut_by_id(p.entity_id).unwrap();
+
+                entity.xxa = p.x_vel as f32 / 8000f32;
+                entity.zza = p.z_vel as f32 / 8000f32;
+                entity.yya = p.y_vel as f32 / 8000f32;
             }
             ClientboundGamePacket::SetEntityLink(p) => {
                 debug!("Got set entity link packet {:?}", p);
